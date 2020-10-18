@@ -26,7 +26,7 @@ pub struct WasmFunctions {
 }
 
 impl WasmFunctions {
-    pub fn new(instance: Instance, memory: Memory) -> Result<Self, ErrBox> {
+    pub fn new(instance: Instance) -> Result<Self, ErrBox> {
         match get_plugin_schema_version(&instance) {
             Ok(plugin_schema_version) => {
                 if plugin_schema_version != PLUGIN_SYSTEM_SCHEMA_VERSION {
@@ -41,6 +41,7 @@ impl WasmFunctions {
                 return err!("Error determining plugin schema version. Are you sure this is a dprint plugin? {}", err.to_string());
             }
         }
+        let memory = instance.exports.get_memory("memory")?.clone();
 
         Ok(WasmFunctions { instance, memory })
     }

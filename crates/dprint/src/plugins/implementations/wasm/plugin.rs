@@ -7,7 +7,7 @@ use dprint_core::types::ErrBox;
 
 use crate::environment::Environment;
 use crate::plugins::{Plugin, InitializedPlugin, PluginPools};
-use super::{WasmFunctions, FormatResult, load_instance, create_pools_import_object};
+use super::{WasmFunctions, FormatResult, load_instance, create_pools_import_object, ImportObjectEnvironment};
 
 pub struct WasmPlugin<TEnvironment: Environment> {
     compiled_wasm_bytes: Vec<u8>,
@@ -62,9 +62,10 @@ impl<TEnvironment: Environment> Plugin for WasmPlugin<TEnvironment> {
 
     fn initialize(&self) -> Result<Box<dyn InitializedPlugin>, ErrBox> {
         let store = wasmer::Store::default();
-        let memory = wasmer::Memory::new(&store, wasmer::MemoryType::new(1, Some(1), false))?;
-        let import_object = create_pools_import_object(&store, &memory, self.plugin_pools.clone(), self.name());
+        let import_obj_env = ImportObjectEnvironment::new(self.name(), self.plugin_pools.clone());
+        let import_object = create_pools_import_object(&store, &import_obj_env);
         let wasm_plugin = InitializedWasmPlugin::new(&self.compiled_wasm_bytes, &import_object)?;
+        import_obj_env.set_memory(wasm_plugin.wasm_functions.get_memory().clone());
         let (plugin_config, global_config) = self.config.as_ref().expect("Call set_config first.");
 
         wasm_plugin.set_global_config(&global_config)?;
@@ -81,8 +82,8 @@ pub struct InitializedWasmPlugin {
 
 impl InitializedWasmPlugin {
     pub fn new(compiled_wasm_bytes: &[u8], import_object: &wasmer::ImportObject) -> Result<Self, ErrBox> {
-        let (instance, memory) = load_instance(compiled_wasm_bytes, import_object)?;
-        let wasm_functions = WasmFunctions::new(instance, memory)?;
+        let instance = load_instance(compiled_wasm_bytes, import_object)?;
+        let wasm_functions = WasmFunctions::new(instance)?;
         let buffer_size = wasm_functions.get_wasm_memory_buffer_size()?;
 
         Ok(InitializedWasmPlugin {
