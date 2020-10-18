@@ -3,13 +3,14 @@ use parking_lot::Mutex;
 use std::sync::Arc;
 use std::collections::HashMap;
 use dprint_core::configuration::ConfigKeyMap;
+use wasmer::{Function, Store, Memory};
 
 use crate::plugins::pool::PluginPools;
 use crate::environment::Environment;
 use super::super::format_with_plugin_pool;
 
 /// Use this when the plugins don't need to format via a plugin pool.
-pub fn create_identity_import_object() -> wasmer_runtime::ImportObject {
+pub fn create_identity_import_object(store: &Store) -> wasmer::ImportObject {
     let host_clear_bytes = |_: u32| {};
     let host_read_buffer = |_: u32, _: u32| {};
     let host_write_buffer = |_: u32, _: u32, _: u32| {};
@@ -19,25 +20,27 @@ pub fn create_identity_import_object() -> wasmer_runtime::ImportObject {
     let host_get_formatted_text = || -> u32 { 0 }; // zero length
     let host_get_error_text = || -> u32 { 0 }; // zero length
 
-    wasmer_runtime::imports! {
+    wasmer::imports! {
         "dprint" => {
-            "host_clear_bytes" => wasmer_runtime::func!(host_clear_bytes),
-            "host_read_buffer" => wasmer_runtime::func!(host_read_buffer),
-            "host_write_buffer" => wasmer_runtime::func!(host_write_buffer),
-            "host_take_override_config" => wasmer_runtime::func!(host_take_override_config),
-            "host_take_file_path" => wasmer_runtime::func!(host_take_file_path),
-            "host_format" => wasmer_runtime::func!(host_format),
-            "host_get_formatted_text" => wasmer_runtime::func!(host_get_formatted_text),
-            "host_get_error_text" => wasmer_runtime::func!(host_get_error_text),
+            "host_clear_bytes" => Function::new_native(&store, host_clear_bytes),
+            "host_read_buffer" => Function::new_native(&store, host_read_buffer),
+            "host_write_buffer" => Function::new_native(&store, host_write_buffer),
+            "host_take_override_config" => Function::new_native(&store, host_take_override_config),
+            "host_take_file_path" => Function::new_native(&store, host_take_file_path),
+            "host_format" => Function::new_native(&store, host_format),
+            "host_get_formatted_text" => Function::new_native(&store, host_get_formatted_text),
+            "host_get_error_text" => Function::new_native(&store, host_get_error_text),
         }
     }
 }
 
 /// Create an import object that formats text using plugins from the plugin pool
 pub fn create_pools_import_object<TEnvironment: Environment>(
+    store: &Store,
+    memory: &Memory,
     pools: Arc<PluginPools<TEnvironment>>,
     plugin_name: &str,
-) -> wasmer_runtime::ImportObject {
+) -> wasmer::ImportObject {
     let parent_plugin_name = String::from(plugin_name);
     let override_config: Arc<Mutex<Option<ConfigKeyMap>>> = Arc::new(Mutex::new(None));
     let file_path: Arc<Mutex<Option<PathBuf>>> = Arc::new(Mutex::new(None));
@@ -54,10 +57,11 @@ pub fn create_pools_import_object<TEnvironment: Environment>(
     };
     let host_read_buffer = {
         let shared_bytes = shared_bytes.clone();
-        move |ctx: &mut wasmer_runtime::Ctx, buffer_pointer: u32, length: u32| {
-            let buffer_pointer: wasmer_runtime::WasmPtr<u8, wasmer_runtime::Array> = wasmer_runtime::WasmPtr::new(buffer_pointer);
+        let memory = memory.clone();
+        move |buffer_pointer: u32, length: u32| {
+            let buffer_pointer: wasmer::WasmPtr<u8, wasmer::Array> = wasmer::WasmPtr::new(buffer_pointer);
             let memory_reader = buffer_pointer
-                .deref(ctx.memory(0), 0, length)
+                .deref(&memory, 0, length)
                 .unwrap();
             let mut shared_bytes = shared_bytes.lock();
             for i in 0..length as usize {
@@ -67,10 +71,11 @@ pub fn create_pools_import_object<TEnvironment: Environment>(
     };
     let host_write_buffer = {
         let shared_bytes = shared_bytes.clone();
-        move |ctx: &mut wasmer_runtime::Ctx, buffer_pointer: u32, offset: u32, length: u32| {
-            let buffer_pointer: wasmer_runtime::WasmPtr<u8, wasmer_runtime::Array> = wasmer_runtime::WasmPtr::new(buffer_pointer);
+        let memory = memory.clone();
+        move |buffer_pointer: u32, offset: u32, length: u32| {
+            let buffer_pointer: wasmer::WasmPtr<u8, wasmer::Array> = wasmer::WasmPtr::new(buffer_pointer);
             let memory_writer = buffer_pointer
-                .deref(ctx.memory(0), 0, length)
+                .deref(&memory, 0, length)
                 .unwrap();
             let offset = offset as usize;
             let length = length as usize;
@@ -169,16 +174,16 @@ pub fn create_pools_import_object<TEnvironment: Environment>(
         }
     };
 
-    wasmer_runtime::imports! {
+    wasmer::imports! {
         "dprint" => {
-            "host_clear_bytes" => wasmer_runtime::func!(host_clear_bytes),
-            "host_read_buffer" => wasmer_runtime::func!(host_read_buffer),
-            "host_write_buffer" => wasmer_runtime::func!(host_write_buffer),
-            "host_take_override_config" => wasmer_runtime::func!(host_take_override_config),
-            "host_take_file_path" => wasmer_runtime::func!(host_take_file_path),
-            "host_format" => wasmer_runtime::func!(host_format),
-            "host_get_formatted_text" => wasmer_runtime::func!(host_get_formatted_text),
-            "host_get_error_text" => wasmer_runtime::func!(host_get_error_text),
+            "host_clear_bytes" => Function::new_native(&store, host_clear_bytes),
+            "host_read_buffer" => Function::new_native(&store, host_read_buffer),
+            "host_write_buffer" => Function::new_native(&store, host_write_buffer),
+            "host_take_override_config" => Function::new_native(&store, host_take_override_config),
+            "host_take_file_path" => Function::new_native(&store, host_take_file_path),
+            "host_format" => Function::new_native(&store, host_format),
+            "host_get_formatted_text" => Function::new_native(&store, host_get_formatted_text),
+            "host_get_error_text" => Function::new_native(&store, host_get_error_text),
         }
     }
 }

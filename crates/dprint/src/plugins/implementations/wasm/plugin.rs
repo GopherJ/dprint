@@ -61,8 +61,10 @@ impl<TEnvironment: Environment> Plugin for WasmPlugin<TEnvironment> {
     }
 
     fn initialize(&self) -> Result<Box<dyn InitializedPlugin>, ErrBox> {
-        let import_object = create_pools_import_object(self.plugin_pools.clone(), self.name());
-        let wasm_plugin = InitializedWasmPlugin::new(&self.compiled_wasm_bytes, import_object)?;
+        let store = wasmer::Store::default();
+        let memory = wasmer::Memory::new(&store, wasmer::MemoryType::new(1, Some(1), false))?;
+        let import_object = create_pools_import_object(&store, &memory, self.plugin_pools.clone(), self.name());
+        let wasm_plugin = InitializedWasmPlugin::new(&self.compiled_wasm_bytes, &import_object)?;
         let (plugin_config, global_config) = self.config.as_ref().expect("Call set_config first.");
 
         wasm_plugin.set_global_config(&global_config)?;
@@ -78,9 +80,9 @@ pub struct InitializedWasmPlugin {
 }
 
 impl InitializedWasmPlugin {
-    pub fn new(compiled_wasm_bytes: &[u8], import_object: wasmer_runtime::ImportObject) -> Result<Self, ErrBox> {
-        let instance = load_instance(compiled_wasm_bytes, import_object)?;
-        let wasm_functions = WasmFunctions::new(instance)?;
+    pub fn new(compiled_wasm_bytes: &[u8], import_object: &wasmer::ImportObject) -> Result<Self, ErrBox> {
+        let (instance, memory) = load_instance(compiled_wasm_bytes, import_object)?;
+        let wasm_functions = WasmFunctions::new(instance, memory)?;
         let buffer_size = wasm_functions.get_wasm_memory_buffer_size()?;
 
         Ok(InitializedWasmPlugin {
